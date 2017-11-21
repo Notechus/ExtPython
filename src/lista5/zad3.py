@@ -41,7 +41,7 @@ def find_urls_in_steps(base, depth=0):
         for url in url_registry:
             print('Searching urls for: ' + url)
             new_res += find_urls(url, results)
-            print('Found total ' + str(len(new_res)) + ' urls')
+            print('Found ' + str(len(new_res)) + ' urls')
             if url not in results:
                 results.append(url)
         results += new_res
@@ -69,6 +69,7 @@ def find_on_page(url, reg_exp, results):
 
 
 def sort_results(results):
+    print('Sorting results')
     for k, v in results.items():
         results[k] = sorted(v.items(), key=lambda x: x[1], reverse=True)
     return results
@@ -78,9 +79,9 @@ def search_engine(base_url, words_str, steps):
     words = words_str.split(' ')
     words_exp = re.compile('|'.join(words), re.IGNORECASE)
     results = {x.lower(): {} for x in words}
-
+    print('Searching urls')
     url_reg = find_urls_in_steps(base_url, steps)
-
+    print('Searching for results on ' + str(len(url_reg)) + ' pages')
     for item in url_reg:
         find_on_page(item, words_exp, results)
 
@@ -89,4 +90,4 @@ def search_engine(base_url, words_str, steps):
 
 ur = 'http://www.ii.uni.wroc.pl/~marcinm'
 wor = 'Python Ruby sqrt'
-search_engine(ur, wor, 1)
+search_engine(ur, wor, 0)
