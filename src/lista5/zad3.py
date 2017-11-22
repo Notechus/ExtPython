@@ -4,9 +4,7 @@ import requests
 
 
 def parse_url_tag(base_url, href, reg_exp):
-    if href is None:
-        pass
-    if href.strip('#') and href != '\\' and href != '/':
+    if href and href.strip('#') and href != '\\' and href != '/':
         if not base_url.endswith('/'):
             base_url = base_url + '/'
         res_url = href if reg_exp.match(href) else base_url + href
@@ -18,7 +16,9 @@ def parse_url_tag(base_url, href, reg_exp):
             print('Invalid url: ' + res_url)
 
 
-def find_urls(url, url_reg=[]):
+def find_urls(url, url_reg):
+    if url_reg is None:
+        url_reg = []
     response = requests.get(url)
     soup = BeautifulSoup(response.content, 'html.parser')
     page_a = soup.find_all('a', href=True)
@@ -62,10 +62,7 @@ def find_on_page(url, reg_exp, results):
     found_results = reg_exp.findall(page)
 
     for res in found_results:
-        if url not in results[res.lower()].keys():
-            results[res.lower()][url] = 1
-        else:
-            results[res.lower()][url] += 1
+        results[res.lower()] = results.get(res.lower(), 0) + 1
 
 
 def sort_results(results):
