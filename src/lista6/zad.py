@@ -36,7 +36,7 @@ def find_urls(url):
 def find_urls_in_steps(base, depth=0):
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=64)
     url_registry = [base]
-    results = [base]
+    results = set([base])
     futures = []
     for i in range(depth + 1):
         print('Searching depth ' + str(i))
@@ -47,7 +47,11 @@ def find_urls_in_steps(base, depth=0):
         for future in concurrent.futures.as_completed(futures):
             res = future.result()
             print('Found ' + str(len(res)) + ' urls')
-            results += res
+            url_registry = []
+            for url in res:
+                results.add(url)
+                if url not in url_registry:
+                    url_registry.append(url)
     print('Found total ' + str(len(results)) + ' urls')
     return results
 
@@ -60,10 +64,8 @@ def return_text_from_url(url):
 
 def find_on_page(url, reg_exp):
     page = return_text_from_url(url)
-
     found_results = reg_exp.findall(page)
-
-    result = {url: found_results}
+    result = (url, found_results)
 
     return result
 
@@ -73,6 +75,12 @@ def sort_results(results):
     for k, v in results.items():
         results[k] = sorted(v.items(), key=lambda x: x[1], reverse=True)
     return results
+
+
+def add_result(res, results):
+    url = res[0]
+    for item in res[1]:
+        results[item.lower()][url] = results[item.lower()].get(url, 0) + 1
 
 
 def search_engine(base_url, words_str, steps):
@@ -88,10 +96,9 @@ def search_engine(base_url, words_str, steps):
         for future in concurrent.futures.as_completed(futures):
             try:
                 res = future.result()
+                add_result(res, results)
             except Exception as exc:
                 print('generated an exception: %s' % exc)
-            else:
-                print(res)
 
     print(sort_results(results))
 
