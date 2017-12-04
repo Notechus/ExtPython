@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, Integer, String, TIMESTAMP
+from datetime import datetime
 
 engine = create_engine("sqlite:///contacts.db", echo=True)
 Base = declarative_base()
@@ -19,20 +20,23 @@ class Contact(Base):
     email = Column(String(100), nullable=False)
     phone_number = Column(String(15), nullable=False, unique=True)
     last_called = Column(TIMESTAMP, nullable=True)
+    last_seen = Column(TIMESTAMP, nullable=True)
 
     def __repr__(self):
         return "<Contact(id='%s', name='%s', surname='%s', email='%s', phone_number='%s' , last_called='%s')>" % (
             self.id, self.name, self.surname, self.email, self.phone_number, self.last_called)
 
 
-class AddDialog(Gtk.Dialog):
-    def __init__(self, parent):
+class ContactDialog(Gtk.Dialog):
+    def __init__(self, parent, contact, see):
         Gtk.Dialog.__init__(self, "My Dialog", parent, 0,
                             (Gtk.STOCK_OK, Gtk.ResponseType.OK))
 
         self.set_default_size(200, 300)
 
         self.grid = Gtk.Grid()
+
+        self.contact = contact
 
         label = Gtk.Label("Create new contact")
         name_label = Gtk.Label(label='Name')
@@ -44,6 +48,12 @@ class AddDialog(Gtk.Dialog):
         phone_label = Gtk.Label(label='Phone')
         self.phone_entry = Gtk.Entry()
 
+        if self.contact is not None:
+            self.name_entry.set_text(contact.name)
+            self.surname_entry.set_text(contact.surname)
+            self.email_entry.set_text(contact.email)
+            self.phone_entry.set_text(contact.phone_number)
+
         self.grid.attach(name_label, 0, 0, 1, 1)
         self.grid.attach_next_to(self.name_entry, name_label, Gtk.PositionType.RIGHT, 1, 1)
         self.grid.attach_next_to(surname_label, name_label, Gtk.PositionType.BOTTOM, 1, 1)
@@ -52,6 +62,14 @@ class AddDialog(Gtk.Dialog):
         self.grid.attach_next_to(self.email_entry, email_label, Gtk.PositionType.RIGHT, 1, 1)
         self.grid.attach_next_to(phone_label, email_label, Gtk.PositionType.BOTTOM, 1, 1)
         self.grid.attach_next_to(self.phone_entry, phone_label, Gtk.PositionType.RIGHT, 1, 1)
+
+        if see:
+            self.name_entry.set_editable(False)
+            self.surname_entry.set_editable(False)
+            self.email_entry.set_editable(False)
+            self.phone_entry.set_editable(False)
+            last_seen_label = Gtk.Label(label='Last Seen: ' + str(contact.last_seen))
+            self.grid.attach_next_to(last_seen_label, phone_label, Gtk.PositionType.BOTTOM, 1, 1)
 
         box = self.get_content_area()
         box.add(label)
@@ -67,6 +85,12 @@ class AddDialog(Gtk.Dialog):
         c.phone_number = self.phone_entry.get_text()
 
         return c
+
+    def update_contact(self):
+        self.contact.name = self.name_entry.get_text()
+        self.contact.surname = self.surname_entry.get_text()
+        self.contact.email = self.email_entry.get_text()
+        self.contact.phone_number = self.phone_entry.get_text()
 
 
 class Window(Gtk.Window):
@@ -94,6 +118,9 @@ class Window(Gtk.Window):
         self.call_button = Gtk.Button(label='Call')
         self.call_button.connect('clicked', self.on_call_button)
         self.box.pack_start(self.call_button, True, True, 0)
+        self.see_button = Gtk.Button(label='See contact')
+        self.see_button.connect('clicked', self.on_see_button)
+        self.box.pack_start(self.see_button, True, True, 0)
 
         # Set up the self.grid
         self.grid = Gtk.Grid()
@@ -102,9 +129,8 @@ class Window(Gtk.Window):
         self.add(self.grid)
 
         # Init store for tree view
-        self.contacts_liststore = Gtk.ListStore(str, str, str, str, str)
-        for row in session.query(Contact).order_by(Contact.surname).all():
-            self.contacts_liststore.append([row.name, row.surname, row.email, row.phone_number, row.last_called])
+        self.contacts_liststore = Gtk.ListStore(str, str, str, str, str, str)
+        self.populate_model()
 
         # Init filter
         self.current_filter_contacts = None
@@ -113,11 +139,13 @@ class Window(Gtk.Window):
 
         # Init tree view
         self.contacts_treeview = Gtk.TreeView.new_with_model(self.contacts_filter)
-        for i, column_title in enumerate(["Name", "Surname", "Email", "Phone Number", "Last Called"]):
+        for i, column_title in enumerate(["Name", "Surname", "Email", "Phone Number", "Last Called", "Last Seen"]):
             renderer = Gtk.CellRendererText()
             column = Gtk.TreeViewColumn(column_title, renderer, text=i)
             self.contacts_treeview.append_column(column)
+
         self.selected_contact = None
+        self.contact = None
         select = self.contacts_treeview.get_selection()
         select.connect("changed", self.on_tree_selection_changed)
 
@@ -144,34 +172,71 @@ class Window(Gtk.Window):
     def on_tree_selection_changed(self, selection):
         model, treeiter = selection.get_selected()
         if treeiter is not None:
-            print("You selected", model[treeiter][3])
             self.selected_contact = model[treeiter][3]
 
     def on_add_button(self, button):
-        print 'added'
-        dialog = AddDialog(self)
+        dialog = ContactDialog(self, None, False)
         response = dialog.run()
 
         if response == Gtk.ResponseType.OK:
-            print("The OK button was clicked")
-            print dialog.create_contact()
-
+            session.add(dialog.create_contact())
+            session.commit()
+            self.populate_model()
+        self.contact = None
+        self.selected_contact = None
         dialog.destroy()
 
     def on_update_button(self, button):
-        print 'updated'
         if self.selected_contact is not None:
-            pass
+            self.contact = session.query(Contact).filter_by(phone_number=self.selected_contact).first()
+            dialog = ContactDialog(self, self.contact, False)
+            response = dialog.run()
+
+            if response == Gtk.ResponseType.OK:
+                dialog.update_contact()
+                session.commit()
+                self.populate_model()
+            self.contact = None
+            self.selected_contact = None
+            dialog.destroy()
 
     def on_delete_button(self, button):
-        print 'deleted'
         if self.selected_contact is not None:
-            pass
+            self.contact = session.query(Contact).filter_by(phone_number=self.selected_contact).first()
+            session.delete(self.contact)
+            session.commit()
+            self.contact = None
+            self.selected_contact = None
+            self.populate_model()
 
     def on_call_button(self, button):
-        print 'called'
         if self.selected_contact is not None:
-            pass
+            self.contact = session.query(Contact).filter_by(phone_number=self.selected_contact).first()
+            self.contact.last_called = datetime.now()
+            session.commit()
+            self.selected_contact = None
+            self.contact = None
+            self.populate_model()
+
+    def on_see_button(self, button):
+        if self.selected_contact is not None:
+            self.contact = session.query(Contact).filter_by(phone_number=self.selected_contact).first()
+            self.contact.last_seen = datetime.now()
+            session.commit()
+            dialog = ContactDialog(self, self.contact, True)
+            dialog.run()
+            dialog.destroy()
+            self.selected_contact = None
+            self.contact = None
+            self.populate_model()
+
+    def populate_model(self):
+        self.contacts_liststore.clear()
+        for row in session.query(Contact).order_by(Contact.surname).all():
+            elem = [row.name, row.surname, row.email, row.phone_number,
+                    "" if row.last_called is None else str(row.last_called),
+                    "" if row.last_seen is None else str(row.last_seen)]
+            self.contacts_liststore.append(elem)
 
 
 if __name__ == "__main__":
